@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/rodaine/hclencoder"
 
@@ -39,9 +41,9 @@ func main() {
 	apiKey := os.Getenv("DD_API_KEY")
 	appKey := os.Getenv("DD_APP_KEY")
 
-	if len(args) != 2 {
-		fail("usage: dd2hcl [dashboard|monitor] [id]")
-	}
+	//if len(args) != 2 {
+	//	fail("usage: dd2hcl [dashboard|monitor] [id]")
+	//}
 
 	if len(apiKey) < 1 {
 		fail("DD_API_KEY environment variable is required but was not set")
@@ -52,8 +54,65 @@ func main() {
 	}
 
 	resourceType := args[0]
-	resourceId := args[1]
+	resourceId := "test"
 
+	path := fmt.Sprintf("%s/api/v1/%s/search?query=team:container-app", ddUrl, resourceType)
+	headers := map[string]string{
+		"Content-Type":       "application/json",
+		"DD-API-KEY":         apiKey,
+		"DD-APPLICATION-KEY": appKey,
+	}
+
+	resp, err := request(http.MethodGet, path, headers)
+	if err != nil {
+		fail("%s %s: unable to get resource: %s", resourceType, resourceId, err)
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fail("%s %s: unable to read response body: %s", resourceType, resourceId, err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		fail("%s %s: %s: %s", resourceType, resourceId, resp.Status, body)
+	}
+	var groups Top
+	err = json.Unmarshal(body, &groups)
+	for _, g := range groups.Monitors {
+
+		hcl := RequestResource(resourceType, strconv.Itoa(g.Id), apiKey, appKey)
+		name := createName(g.Name)
+		data := []byte(hcl)
+		err := ioutil.WriteFile(name, data, 0644)
+		if err != nil {
+			fail("%s %s: unable to read response body: %s", resourceType, resourceId, err)
+		}
+		fmt.Printf("wrote file %s\n", name)
+	}
+}
+
+func createName(name string) string {
+	split := strings.Split(name, " ")
+	var newName []string
+	newName = append(newName, "monitor")
+	for _, s := range split {
+		if strings.ContainsAny(s, "[]{},_-:()") {
+			continue
+		}
+		newName = append(newName, strings.ToLower(s))
+	}
+	return strings.Join(newName, "_") + ".tf"
+}
+
+type Monitor struct {
+	Id   int    `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+
+type Top struct {
+	Monitors []Monitor `json:"monitors,omitempty"`
+}
+
+func RequestResource(resourceType string, resourceId string, apiKey string, appKey string) string {
 	path := fmt.Sprintf("%s/api/v1/%s/%s", ddUrl, resourceType, resourceId)
 	headers := map[string]string{
 		"Content-Type":       "application/json",
@@ -105,7 +164,7 @@ func main() {
 		fail("%s %s: unable to encode hcl: %s", resourceType, resourceId, err)
 	}
 
-	fmt.Println(string(hcl))
+	return string(hcl)
 }
 
 func fail(format string, a ...interface{}) {
