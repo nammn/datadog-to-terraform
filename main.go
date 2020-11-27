@@ -78,9 +78,9 @@ func main() {
 	var groups Top
 	err = json.Unmarshal(body, &groups)
 	for _, g := range groups.Monitors {
-
-		hcl := RequestResource(resourceType, strconv.Itoa(g.Id), apiKey, appKey)
 		name := createName(g.Name)
+		monitorName := createMonitorName(name[:len(name)-3])
+		hcl := RequestResource(resourceType, strconv.Itoa(g.Id), apiKey, appKey, monitorName)
 		data := []byte(hcl)
 		err := ioutil.WriteFile(name, data, 0644)
 		if err != nil {
@@ -95,12 +95,27 @@ func createName(name string) string {
 	var newName []string
 	newName = append(newName, "monitor")
 	for _, s := range split {
-		if strings.ContainsAny(s, "[]{},_-:()") {
+		if strings.ContainsAny(s, "<>%15 []{},_-:()") {
+			continue
+		}
+		if strings.Contains(s, "on") {
 			continue
 		}
 		newName = append(newName, strings.ToLower(s))
 	}
-	return strings.Join(newName, "_") + ".tf"
+	return strings.Join(newName, "-") + ".tf"
+}
+
+func createMonitorName(name string) string {
+	var n []string
+	split := strings.Split(name, "-")
+	for _, s := range split {
+		if s == "monitor" {
+			continue
+		}
+		n = append(n, s)
+	}
+	return strings.Join(n, "_")
 }
 
 type Monitor struct {
@@ -112,7 +127,7 @@ type Top struct {
 	Monitors []Monitor `json:"monitors,omitempty"`
 }
 
-func RequestResource(resourceType string, resourceId string, apiKey string, appKey string) string {
+func RequestResource(resourceType string, resourceId string, apiKey string, appKey string, name string) string {
 	path := fmt.Sprintf("%s/api/v1/%s/%s", ddUrl, resourceType, resourceId)
 	headers := map[string]string{
 		"Content-Type":       "application/json",
@@ -134,7 +149,7 @@ func RequestResource(resourceType string, resourceId string, apiKey string, appK
 		fail("%s %s: %s: %s", resourceType, resourceId, resp.Status, body)
 	}
 
-	resource := types.Resource{Name: resourceId}
+	resource := types.Resource{Name: name}
 
 	switch resourceType {
 	case dashboardResource:
