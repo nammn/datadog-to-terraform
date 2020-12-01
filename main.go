@@ -41,9 +41,9 @@ func main() {
 	apiKey := os.Getenv("DD_API_KEY")
 	appKey := os.Getenv("DD_APP_KEY")
 
-	//if len(args) != 2 {
-	//	fail("usage: dd2hcl [dashboard|monitor] [id]")
-	//}
+	if len(args) != 2 {
+		fail("usage: dd2hcl [dashboard|monitor] [id]")
+	}
 
 	if len(apiKey) < 1 {
 		fail("DD_API_KEY environment variable is required but was not set")
@@ -54,9 +54,15 @@ func main() {
 	}
 
 	resourceType := args[0]
-	resourceId := "test"
+	resourceId := args[1]
 
-	path := fmt.Sprintf("%s/api/v1/%s/search?query=team:container-app", ddUrl, resourceType)
+	var path string
+
+	if resourceId == "query" {
+		path = fmt.Sprintf("%s/api/v1/%s/search?query=team:container-app", ddUrl, resourceType)
+	} else {
+		path = fmt.Sprintf("%s/api/v1/%s/%s", ddUrl, resourceType, resourceId)
+	}
 	headers := map[string]string{
 		"Content-Type":       "application/json",
 		"DD-API-KEY":         apiKey,
@@ -75,19 +81,25 @@ func main() {
 	if resp.StatusCode != http.StatusOK {
 		fail("%s %s: %s: %s", resourceType, resourceId, resp.Status, body)
 	}
-	var groups Top
-	err = json.Unmarshal(body, &groups)
-	for _, g := range groups.Monitors {
-		name := createName(g.Name)
-		monitorName := createMonitorName(name[:len(name)-3])
-		hcl := RequestResource(resourceType, strconv.Itoa(g.Id), apiKey, appKey, monitorName)
-		data := []byte(hcl)
-		err := ioutil.WriteFile(name, data, 0644)
-		if err != nil {
-			fail("%s %s: unable to read response body: %s", resourceType, resourceId, err)
+	if resourceId == "query" {
+		var groups Top
+		err = json.Unmarshal(body, &groups)
+		for _, g := range groups.Monitors {
+			name := createName(g.Name)
+			monitorName := createMonitorName(name[:len(name)-3])
+			hcl := RequestResource(resourceType, strconv.Itoa(g.Id), apiKey, appKey, monitorName)
+			data := []byte(hcl)
+			err := ioutil.WriteFile(name, data, 0644)
+			if err != nil {
+				fail("%s %s: unable to read response body: %s", resourceType, resourceId, err)
+			}
+			fmt.Printf("wrote file %s from id %d and name %s\n", name, g.Id, g.Name)
 		}
-		fmt.Printf("wrote file %s\n", name)
+	} else {
+		hcl := RequestResource(resourceType, resourceId, apiKey, appKey, resourceId)
+		fmt.Println(hcl)
 	}
+
 }
 
 func createName(name string) string {
