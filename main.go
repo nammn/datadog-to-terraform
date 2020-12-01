@@ -107,10 +107,22 @@ func createName(name string) string {
 	var newName []string
 	newName = append(newName, "monitor")
 	for _, s := range split {
-		if strings.ContainsAny(s, "<>%15 []{},_-:()") {
+		if strings.Contains(s, "[container-app]") {
+			continue
+		}
+		if strings.Contains(s, "[prod]") {
+			continue
+		}
+		if strings.ContainsAny(s, "<>%15 {},_-:()") {
 			continue
 		}
 		if strings.Contains(s, "on") {
+			continue
+		}
+		if strings.Contains(s, "[") {
+			s = s[1 : len(s)-1]
+		}
+		if s == " " {
 			continue
 		}
 		newName = append(newName, strings.ToLower(s))
